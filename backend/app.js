@@ -8,9 +8,9 @@ const readline = require('readline');
 const app = express();
 
 const client = new cassandra.Client({
-    contactPoints: ['34.200.231.63'],
-    authProvider: new cassandra.auth.PlainTextAuthProvider('admin', 'adminpassword'),
-    keyspace: 'node_angular'
+    contactPoints: [''],
+    authProvider: new cassandra.auth.PlainTextAuthProvider('', ''),
+    keyspace: 'hck_2018'
 });
 
 client.connect((err, result) => {
@@ -71,15 +71,11 @@ app.post('/api/posts', (req, res, next) => {
 app.post('/api/s3posts', (req, res, next) => {
 
     // Set the region 
-    aws.config.update({
-        accessKeyId: "AKIAJDBAMNPBWCI42EKQ",
-        secretAccessKey: "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",
-        region: 'us-east-1'
-    });
+    aws.config.update({ region: 'us-east-1' });
 
     // Create S3 service object
     const s3 = new aws.S3();
-    const params = { Bucket: "hck2018" };
+    const params = { Bucket: "hck2018-dataload" };
     const query = 'INSERT INTO posts(id, title, content) VALUES(?, ?, ?)';
     const queries = [];
 
