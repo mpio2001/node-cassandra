@@ -1,3 +1,4 @@
+const aws = require('aws-sdk');
 const express = require('express');
 const bodyParser = require('body-parser');
 const cassandra = require('cassandra-driver');
@@ -64,6 +65,78 @@ app.post('/api/posts', (req, res, next) => {
             });
         }
     });
+});
+
+//insert post from s3
+app.post('/api/s3posts', (req, res, next) => {
+
+    // Set the region 
+    aws.config.update({
+        accessKeyId: "AKIAJDBAMNPBWCI42EKQ",
+        secretAccessKey: "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",
+        region: 'us-east-1'
+    });
+
+    // Create S3 service object
+    const s3 = new aws.S3();
+    const params = { Bucket: "hck2018" };
+    const query = 'INSERT INTO posts(id, title, content) VALUES(?, ?, ?)';
+    const queries = [];
+
+    s3.listObjectsV2(params, (err, data) => {
+        if (err) { // an error occurred
+            console.log(err, err.stack);
+        }
+        else {  // successful response
+            var promise = [];
+            for (i = 0; i <= data.Contents.length - 1; i++) {
+                var key = data.Contents[i].Key
+                if (key.startsWith('source/') && key.endsWith('.csv')) {
+                    promise.push(readFile(key));
+                }
+
+                if (i == (data.Contents.length - 1)) {
+                    Promise.all(promise)
+                        .then(writeToDb)
+                        .then((success) => {
+                            res.status(201).json(success);
+                        }).catch((err) => {
+                            res.status(404).send(err);
+                        });
+                }
+            }
+        }
+    });
+
+    var readFile = function (file) {
+        return new Promise((resolve, reject) => {
+            var rl = readline.createInterface({
+                input: s3.getObject({ Bucket: params.Bucket, Key: file }).createReadStream()
+            });
+
+            rl.on('line', (line) => {
+                const post = (line.toString()).split(',');
+                queries.push({ query: query, params: [cassandra.types.uuid(), post[0], post[1]] });
+            });
+
+            rl.on('close', () => {
+                resolve();
+            });
+        });
+    }
+
+    var writeToDb = function () {
+        return new Promise((resolve, reject) => {
+            client.batch(queries, { prepare: true }, (err) => {
+                if (err) {
+                    reject({ message: err });
+                }
+                else {
+                    resolve({ message: 'Bulk Post added successfully' });
+                }
+            });
+        });
+    }
 });
 
 //delete post
