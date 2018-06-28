@@ -75,60 +75,32 @@ app.post('/api/s3posts', (req, res, next) => {
 
     // Create S3 service object
     const s3 = new aws.S3();
-    const params = { Bucket: "hck2018-dataload" };
+    const bucket = req.body.bucket;
+    const file = req.body.key;
     const query = 'INSERT INTO posts(id, title, content) VALUES(?, ?, ?)';
     const queries = [];
 
-    s3.listObjectsV2(params, (err, data) => {
-        if (err) { // an error occurred
-            console.log(err, err.stack);
-        }
-        else {  // successful response
-            var promise = [];
-            for (i = 0; i <= data.Contents.length - 1; i++) {
-                var key = data.Contents[i].Key
-                if (key.startsWith('source/') && key.endsWith('.csv')) {
-                    promise.push(readFile(key));
-                }
-
-                if (i == (data.Contents.length - 1)) {
-                    Promise.all(promise)
-                        .then(writeToDb)
-                        .then((success) => {
-                            res.status(201).json(success);
-                        }).catch((err) => {
-                            res.status(404).send(err);
-                        });
-                }
-            }
-        }
+    var rl = readline.createInterface({
+        input: s3.getObject({ Bucket: bucket, Key: file }).createReadStream()
     });
 
-    var readFile = function (file) {
-        return new Promise((resolve, reject) => {
-            var rl = readline.createInterface({
-                input: s3.getObject({ Bucket: params.Bucket, Key: file }).createReadStream()
-            });
+    rl.on('line', (line) => {
+        const post = (line.toString()).split(',');
+        queries.push({ query: query, params: [cassandra.types.uuid(), post[0], post[1]] });
+    });
 
-            rl.on('line', (line) => {
-                const post = (line.toString()).split(',');
-                queries.push({ query: query, params: [cassandra.types.uuid(), post[0], post[1]] });
-            });
-
-            rl.on('close', () => {
-                resolve();
-            });
-        });
-    }
+    rl.on('close', () => {
+        writeToDb();
+    });
 
     var writeToDb = function () {
         return new Promise((resolve, reject) => {
             client.batch(queries, { prepare: true }, (err) => {
                 if (err) {
-                    reject({ message: err });
+                    res.status(404).send(err);
                 }
                 else {
-                    resolve({ message: 'Bulk Post added successfully' });
+                    res.status(201).json({ message: 'Bulk Post added successfully' });
                 }
             });
         });
